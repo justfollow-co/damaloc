@@ -30,6 +30,8 @@ export default function PickupPage() {
   const [isCompleted, setIsCompleted] = useState(false);
   // État pour stocker l'image de la signature
   const [signatureImage, setSignatureImage] = useState("");
+  // État pour indiquer si le PDF est en cours de génération
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Référence pour le canvas de signature
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -129,6 +131,67 @@ export default function PickupPage() {
     }
   };
   
+  // Générer et télécharger le contrat PDF
+  const generateContract = async () => {
+    if (!signatureImage) {
+      setError("Impossible de générer le contrat sans signature");
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+
+    try {
+      // Préparer les données pour l'API
+      const contractData = {
+        clientName: "Client Test", // Dans une vraie application, utilisez le nom réel du client
+        pickupDate: new Date().toISOString(),
+        latitude: location?.latitude || 0,
+        longitude: location?.longitude || 0,
+        signatureData: signatureImage,
+        photos: [
+          ...exteriorPhotos.map((p, i) => `Photo extérieure ${i + 1}`),
+          ...interiorPhotos.map((p, i) => `Photo intérieure ${i + 1}`)
+        ]
+      };
+
+      // Appeler l'API pour générer le PDF
+      const response = await fetch("/api/generate-contract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(contractData),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erreur lors de la génération du contrat");
+      }
+
+      // Obtenir le blob depuis la réponse
+      const pdfBlob = await response.blob();
+      
+      // Créer un URL pour le blob
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      
+      // Créer un élément a pour déclencher le téléchargement
+      const downloadLink = document.createElement("a");
+      downloadLink.href = pdfUrl;
+      downloadLink.download = `contrat_pickup_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      
+      // Libérer l'URL de l'objet
+      URL.revokeObjectURL(pdfUrl);
+
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      setError("Une erreur est survenue lors de la génération du contrat");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   // Fonction pour traiter et afficher les données collectées
   const handleSubmit = () => {
     if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
@@ -171,12 +234,56 @@ export default function PickupPage() {
           setSignatureImage(signatureData);
         }
 
-        // Simuler un appel API
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Simuler un appel API pour le pickup
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Préparer les données pour l'API de génération du contrat
+        const contractData = {
+          clientName: "Client Test", // Dans une vraie application, utilisez le nom réel du client
+          pickupDate: new Date().toISOString(),
+          latitude: location?.latitude || 0,
+          longitude: location?.longitude || 0,
+          signatureData: signatureData || "",
+          photos: [
+            ...exteriorPhotos.map((p, i) => `Photo extérieure ${i + 1}`),
+            ...interiorPhotos.map((p, i) => `Photo intérieure ${i + 1}`)
+          ]
+        };
+        
+        // Appeler l'API pour générer le PDF
+        const response = await fetch("/api/generate-contract", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(contractData),
+        });
+        
+        if (!response.ok) {
+          console.error("Erreur lors de la génération du contrat:", await response.text());
+        } else {
+          // Obtenir le blob depuis la réponse
+          const pdfBlob = await response.blob();
+          
+          // Créer un URL pour le blob
+          const pdfUrl = URL.createObjectURL(pdfBlob);
+          
+          // Créer un élément a pour déclencher le téléchargement
+          const downloadLink = document.createElement("a");
+          downloadLink.href = pdfUrl;
+          downloadLink.download = `contrat_pickup_${new Date().toISOString().split('T')[0]}.pdf`;
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          document.body.removeChild(downloadLink);
+          
+          // Libérer l'URL de l'objet
+          URL.revokeObjectURL(pdfUrl);
+        }
 
         // Simuler que l'envoi a réussi
         setIsCompleted(true);
       } catch (err) {
+        console.error("Erreur lors de la soumission:", err);
         setError("Une erreur est survenue lors de l'envoi du formulaire");
       } finally {
         setIsSubmitting(false);
@@ -229,12 +336,29 @@ export default function PickupPage() {
           <p className="text-gray-600 mb-6">
             Toutes les informations ont été enregistrées. Merci d'avoir complété le processus de pickup.
           </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition"
-          >
-            Nouveau pickup
-          </button>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">
+              {error}
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            <button
+              onClick={generateContract}
+              disabled={isGeneratingPdf}
+              className={`w-full py-3 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition ${isGeneratingPdf ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              {isGeneratingPdf ? 'Génération en cours...' : 'Télécharger le contrat PDF'}
+            </button>
+            
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 transition"
+            >
+              Nouveau pickup
+            </button>
+          </div>
         </div>
       </div>
     );
